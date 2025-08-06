@@ -1,0 +1,94 @@
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: vllm-qwen-inference
+  labels:
+    app: vllm-qwen-inference
+spec:
+  replicas: 4  # 部署4个副本
+  selector:
+    matchLabels:
+      app: vllm-qwen-inference
+  template:
+    metadata:
+      labels:
+        app: vllm-qwen-inference
+    spec:
+      containers:
+        - name: vllm-openai
+          image: vllm/vllm-openai:latest
+          resources:
+            limits:
+              nvidia.com/gpu: 2
+            requests:
+              cpu: "4"
+              memory: 8Gi
+              nvidia.com/gpu: 2
+          command:
+            - "python3"
+            - "-m"
+            - "vllm.entrypoints.openai.api_server"
+            - "--model"
+            - "Qwen/Qwen3-0.6B" # 或使用S3挂载路径 /models/Qwen3-0.6B
+            - "--tensor-parallel-size"
+            - "2"
+            - "--host"
+            - "0.0.0.0"
+            - "--port"
+            - "8000"
+            - "--trust-remote-code"
+          ports:
+            - containerPort: 8000
+              name: http
+          volumeMounts:
+            - name: persistent-storage-s3
+              mountPath: /models
+              readOnly: true
+            - name: huggingface-cache
+              mountPath: /root/.cache/huggingface
+            - name: shm
+              mountPath: /dev/shm
+          env:
+            - name: HUGGING_FACE_HUB_TOKEN
+              value: "TOKEN"  # 请替换为你的实际token
+            - name: TRANSFORMERS_CACHE
+              value: "/root/.cache/huggingface"
+          securityContext:
+            capabilities:
+              add:
+                - IPC_LOCK
+      volumes:
+        - name: persistent-storage-s3
+          persistentVolumeClaim:
+            claimName: s3-claim
+        - name: huggingface-cache
+          hostPath:
+            path: /opt/dlami/nvme/huggingface-cache
+            type: DirectoryOrCreate
+        - name: shm
+          emptyDir:
+            medium: Memory
+            sizeLimit: 2Gi
+      tolerations:
+        - key: "nvidia.com/gpu"
+          operator: "Exists"
+          effect: "NoSchedule"
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: vllm-qwen-nlb
+  annotations:
+    # NLB specific annotations
+    service.beta.kubernetes.io/aws-load-balancer-type: "external"
+    service.beta.kubernetes.io/aws-load-balancer-nlb-target-type: "ip"
+    service.beta.kubernetes.io/aws-load-balancer-scheme: "internet-facing" # internal internet-facing
+spec:
+  ports:
+    - port: 8000
+      protocol: TCP
+      targetPort: http
+  selector:
+    app: vllm-qwen-inference
+  type: LoadBalancer

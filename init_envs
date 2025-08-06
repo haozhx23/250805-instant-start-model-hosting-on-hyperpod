@@ -1,0 +1,13 @@
+export CLOUD_FORMATION_FULL_STACK_NAME=hp-eks-full-stack-0805
+export AWS_REGION=us-west-2
+export EKS_CLUSTER_NAME=eks-cluster-1
+export HP_CLUSTER_NAME=hp-cluster-1
+# export FTP_NAME=your-ftp-name
+export AWS_AZ=usw2-az3
+export GPU_INSTANCE_TYPE=ml.g5.12xlarge
+export GPU_INSTANCE_COUNT=2
+export DEPLOY_MODEL_S3_BUCKET=pdx-cluster-mount
+
+# Automatic fill
+export ACCOUNT_ID=$(aws sts get-caller-identity --query Account --output text)
+export STACK_ID=$CLOUD_FORMATION_FULL_STACK_NAME

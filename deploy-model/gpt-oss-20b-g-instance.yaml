@@ -1,0 +1,116 @@
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: olm-gpt20b-inference
+  labels:
+    app: olm-gpt20b-inference
+spec:
+  replicas: 2
+  selector:
+    matchLabels:
+      app: olm-gpt20b-inference
+  template:
+    metadata:
+      labels:
+        app: olm-gpt20b-inference
+    spec:
+      containers:
+        - name: ollama
+          image: ollama/ollama:latest
+          resources:
+            limits:
+              nvidia.com/gpu: 1
+            requests:
+              cpu: "8"
+              memory: 16Gi
+              nvidia.com/gpu: 1
+          env:
+            - name: OLLAMA_HOST
+              value: "0.0.0.0"
+            - name: OLLAMA_ORIGINS
+              value: "*"
+          ports:
+            - containerPort: 11434
+              name: http
+          volumeMounts:
+            - name: persistent-storage-s3
+              mountPath: /models
+              readOnly: true
+            - name: ollama-cache
+              mountPath: /root/.ollama
+            - name: shm
+              mountPath: /dev/shm
+          # 启动后自动拉取模型
+          lifecycle:
+            postStart:
+              exec:
+                command:
+                  - "/bin/sh"
+                  - "-c"
+                  - |
+                    sleep 10
+                    ollama pull gpt-oss:20b || true
+          livenessProbe:
+            httpGet:
+              path: /
+              port: 11434
+            initialDelaySeconds: 60
+            periodSeconds: 30
+          readinessProbe:
+            httpGet:
+              path: /
+              port: 11434
+            initialDelaySeconds: 30
+            periodSeconds: 10
+          securityContext:
+            capabilities:
+              add:
+                - IPC_LOCK
+      volumes:
+        - name: persistent-storage-s3
+          persistentVolumeClaim:
+            claimName: s3-claim
+        - name: ollama-cache
+          hostPath:
+            path: /opt/dlami/nvme/.ollama
+            type: DirectoryOrCreate
+        - name: shm
+          emptyDir:
+            medium: Memory
+            sizeLimit: 2Gi
+      tolerations:
+        - key: "nvidia.com/gpu"
+          operator: "Exists"
+          effect: "NoSchedule"
+      # anti-affinity, on different node
+      affinity:
+        podAntiAffinity:
+          preferredDuringSchedulingIgnoredDuringExecution:
+          - weight: 100
+            podAffinityTerm:
+              labelSelector:
+                matchExpressions:
+                - key: app
+                  operator: In
+                  values:
+                  - olm-gpt20b-inference
+              topologyKey: kubernetes.io/hostname
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: gpt-20b-nlb
+  annotations:
+    # NLB specific annotations
+    service.beta.kubernetes.io/aws-load-balancer-type: "external"
+    service.beta.kubernetes.io/aws-load-balancer-nlb-target-type: "ip"
+    service.beta.kubernetes.io/aws-load-balancer-scheme: "internet-facing" # internal internet-facing
+spec:
+  ports:
+    - port: 11434
+      protocol: TCP
+      targetPort: http
+  selector:
+    app: olm-gpt20b-inference
+  type: LoadBalancer

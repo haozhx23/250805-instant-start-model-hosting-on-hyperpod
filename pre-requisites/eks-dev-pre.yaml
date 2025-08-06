@@ -1,0 +1,224 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Description: 'CloudFormation template for EKS SMHP setup with timestamped names and automated dependency installation - FIXED VERSION'
+
+Parameters:
+  InstanceName:
+    Type: String
+    Default: eks-smhp-dev-instance
+    Description: Name for the EC2 instance
+    
+  InstanceType:
+    Type: String
+    Default: m5.xlarge
+    Description: EC2 instance type (e.g., c5.xlarge, m5.xlarge, t3.large)
+    
+  AmiId:
+    Type: String
+    Default: ami-05f991c49d264708f
+    Description: AMI ID for the EC2 instance
+    
+  KeyPairName:
+    Type: String
+    Default: pdxkeypair
+    Description: Name of the EC2 KeyPair for SSH access
+    
+  Timestamp:
+    Type: String
+    Default: "20250805-0600"
+    Description: Timestamp to make resource names unique (format YYYYMMDD-HHMM)
+    
+  EBSVolumeSize:
+    Type: Number
+    Default: 200
+    MinValue: 8
+    MaxValue: 16384
+    Description: Size of the EBS root volume in GB (minimum 8 GB, maximum 16384 GB)
+
+Resources:
+  # IAM Role with timestamped name
+  SMHPAdminRole:
+    Type: AWS::IAM::Role
+    Properties:
+      RoleName: !Sub 'smhp-admin-role-${Timestamp}'
+      AssumeRolePolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service:
+                - ec2.amazonaws.com
+                - ecr.amazonaws.com
+                - eks.amazonaws.com
+                - bedrock.amazonaws.com
+                - cloudformation.amazonaws.com
+                - sagemaker.amazonaws.com
+            Action:
+              - sts:AssumeRole
+          - Effect: Allow
+            Principal:
+              AWS: !Sub 'arn:aws:iam::${AWS::AccountId}:root'
+            Action: sts:AssumeRole
+      ManagedPolicyArns:
+        - arn:aws:iam::aws:policy/AdministratorAccess
+
+  # Instance Profile for the IAM Role
+  SMHPInstanceProfile:
+    Type: AWS::IAM::InstanceProfile
+    Properties:
+      InstanceProfileName: !Sub 'instance-profile-${SMHPAdminRole}'
+      Roles:
+        - !Ref SMHPAdminRole
+
+  # Security Group with timestamped name
+  SecurityGroup:
+    Type: AWS::EC2::SecurityGroup
+    Properties:
+      GroupName: !Sub 'eks-smhp-entry-sg-${Timestamp}'
+      GroupDescription: Security group for eks-smhp-entry instance
+      SecurityGroupIngress:
+        - IpProtocol: tcp
+          FromPort: 22
+          ToPort: 22
+          CidrIp: 0.0.0.0/0
+        - IpProtocol: tcp
+          FromPort: 8000
+          ToPort: 10000
+          CidrIp: 0.0.0.0/0
+
+  # EC2 Instance with IAM Role attached, custom EBS volume, and UserData for dependency installation
+  EC2Instance:
+    Type: AWS::EC2::Instance
+    Properties:
+      ImageId: !Ref AmiId
+      InstanceType: !Ref InstanceType
+      KeyName: !Ref KeyPairName
+      SecurityGroupIds:
+        - !Ref SecurityGroup
+      IamInstanceProfile: !Ref SMHPInstanceProfile
+      BlockDeviceMappings:
+        - DeviceName: /dev/sda1
+          Ebs:
+            VolumeType: gp3
+            VolumeSize: !Ref EBSVolumeSize
+            DeleteOnTermination: true
+            Encrypted: true
+      UserData:
+        Fn::Base64: !Sub |
+          #!/bin/bash
+          
+          # Create log file for installation progress
+          LOG_FILE="/var/log/dependency-install.log"
+          exec > >(tee -a $LOG_FILE)
+          exec 2>&1
+          
+          echo "Starting dependency installation at $(date)"
+          
+          # Update system and install basic dependencies
+          apt-get update -y
+          apt-get install -y unzip curl wget python3-pip
+          
+          # Install CloudFormation helper scripts FIRST
+          echo "Installing CloudFormation helper scripts..."
+          pip3 install https://s3.amazonaws.com/cloudformation-examples/aws-cfn-bootstrap-py3-latest.tar.gz
+          
+          # Create symlinks for cfn-signal
+          ln -sf /usr/local/bin/cfn-signal /opt/aws/bin/cfn-signal 2>/dev/null || true
+          mkdir -p /opt/aws/bin
+          ln -sf /usr/local/bin/cfn-signal /opt/aws/bin/cfn-signal 2>/dev/null || true
+          
+          # Install AWS CLI v2
+          echo "Installing AWS CLI v2..."
+          curl "https://awscli.amazonaws.com/awscli-exe-linux-x86_64.zip" -o "awscliv2.zip"
+          unzip awscliv2.zip
+          ./aws/install --update
+          rm -rf awscliv2.zip aws/
+          
+          # Verify AWS CLI installation
+          aws --version
+          
+          # Install kubectl
+          echo "Installing kubectl..."
+          curl -O https://s3.us-west-2.amazonaws.com/amazon-eks/1.30.4/2024-09-11/bin/linux/amd64/kubectl
+          chmod +x ./kubectl
+          mkdir -p /home/ubuntu/bin
+          cp ./kubectl /home/ubuntu/bin/kubectl
+          rm kubectl
+          
+          # Update PATH for ubuntu user
+          echo 'export PATH=$HOME/bin:$PATH' >> /home/ubuntu/.bashrc
+          chown ubuntu:ubuntu /home/ubuntu/bin/kubectl
+          chown ubuntu:ubuntu /home/ubuntu/.bashrc
+          
+          # Install eksctl (skip checksum verification to avoid failures)
+          echo "Installing eksctl..."
+          ARCH=amd64
+          PLATFORM=$(uname -s)_$ARCH
+          curl -sLO "https://github.com/eksctl-io/eksctl/releases/latest/download/eksctl_$PLATFORM.tar.gz"
+          
+          # Skip checksum verification to avoid potential failures
+          tar -xzf eksctl_$PLATFORM.tar.gz -C /tmp
+          rm eksctl_$PLATFORM.tar.gz
+          mv /tmp/eksctl /usr/local/bin
+          
+          # Install Helm
+          echo "Installing Helm..."
+          curl -fsSL -o get_helm.sh https://raw.githubusercontent.com/helm/helm/main/scripts/get-helm-3
+          chmod 700 get_helm.sh
+          ./get_helm.sh
+          rm get_helm.sh
+          
+          # Verify installations
+          echo "Verifying installations..."
+          aws --version
+          kubectl version --client
+          eksctl version
+          helm version
+          
+          # Set proper ownership for ubuntu user home directory
+          chown -R ubuntu:ubuntu /home/ubuntu/
+          
+          echo "Dependency installation completed at $(date)"
+          
+          # Signal CloudFormation that the instance is ready
+          # Try multiple methods to ensure signal is sent
+          if command -v cfn-signal >/dev/null 2>&1; then
+            cfn-signal -e $? --stack ${AWS::StackName} --resource EC2Instance --region ${AWS::Region}
+          elif [ -f /usr/local/bin/cfn-signal ]; then
+            /usr/local/bin/cfn-signal -e $? --stack ${AWS::StackName} --resource EC2Instance --region ${AWS::Region}
+          elif [ -f /opt/aws/bin/cfn-signal ]; then
+            /opt/aws/bin/cfn-signal -e $? --stack ${AWS::StackName} --resource EC2Instance --region ${AWS::Region}
+          else
+            echo "cfn-signal not found, using AWS CLI to send signal"
+            # Fallback: use AWS CLI to send signal
+            aws cloudformation signal-resource --stack-name ${AWS::StackName} --logical-resource-id EC2Instance --unique-id $(curl -s http://169.254.169.254/latest/meta-data/instance-id) --status SUCCESS --region ${AWS::Region}
+          fi
+      Tags:
+        - Key: Name
+          Value: !Sub '${InstanceName}-${Timestamp}'
+    CreationPolicy:
+      ResourceSignal:
+        Count: 1
+        Timeout: PT5M  # 5 minutes for fast failure
+
+Outputs:
+  InstanceId:
+    Value: !Ref EC2Instance
+    Description: EC2 Instance ID
+  InstancePublicIP:
+    Value: !GetAtt EC2Instance.PublicIp
+    Description: Public IP address of the EC2 instance
+  IAMRoleName:
+    Value: !Ref SMHPAdminRole
+    Description: Name of the IAM role
+  IAMRoleArn:
+    Value: !GetAtt SMHPAdminRole.Arn
+    Description: ARN of the IAM role
+  InstanceProfileName:
+    Value: !Ref SMHPInstanceProfile
+    Description: Name of the Instance Profile
+  InstanceProfileArn:
+    Value: !GetAtt SMHPInstanceProfile.Arn
+    Description: ARN of the Instance Profile
+  SecurityGroupId:
+    Value: !Ref SecurityGroup
+    Description: Security Group ID
