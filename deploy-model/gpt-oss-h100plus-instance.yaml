@@ -2,18 +2,18 @@
 apiVersion: apps/v1
 kind: Deployment
 metadata:
-  name: vllm-gpt-20b-inference
+  name: vllm-gpt-120b-inference
   labels:
-    app: vllm-gpt-20b-inference
+    app: vllm-gpt-120b-inference
 spec:
   replicas: 2
   selector:
     matchLabels:
-      app: vllm-gpt-20b-inference
+      app: vllm-gpt-120b-inference
   template:
     metadata:
       labels:
-        app: vllm-gpt-20b-inference
+        app: vllm-gpt-120b-inference
     spec:
       containers:
         - name: vllm-openai
@@ -22,7 +22,7 @@ spec:
             limits:
               nvidia.com/gpu: 1
             requests:
-              cpu: "8"
+              cpu: "16"
               memory: 32Gi
               nvidia.com/gpu: 1
           command:
@@ -30,7 +30,7 @@ spec:
             - "-m"
             - "vllm.entrypoints.openai.api_server"
             - "--model"
-            - "openai/gpt-oss-20b"  # 或者使用挂载的本地路径/models/gpt-oss-20b
+            - "openai/gpt-oss-120b"  # 或者使用挂载的本地路径/models/gpt-oss-120b
             - "--tensor-parallel-size"
             - "1"
             - "--host"
@@ -78,7 +78,7 @@ spec:
 apiVersion: v1
 kind: Service
 metadata:
-  name: vllm-gpt-20b-nlb
+  name: vllm-gpt-120b-nlb
   annotations:
     # NLB specific annotations
     service.beta.kubernetes.io/aws-load-balancer-type: "external"
@@ -90,5 +90,5 @@ spec:
       protocol: TCP
       targetPort: http
   selector:
-    app: vllm-gpt-20b-inference
+    app: vllm-gpt-120b-inference
   type: LoadBalancer
