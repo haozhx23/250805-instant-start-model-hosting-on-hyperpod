@@ -79,6 +79,18 @@ spec:
           emptyDir:
             medium: Memory
             sizeLimit: 2Gi
+      affinity:
+        podAffinity:
+          preferredDuringSchedulingIgnoredDuringExecution:
+          - weight: 100
+            podAffinityTerm:
+              labelSelector:
+                matchExpressions:
+                - key: app
+                  operator: In
+                  values:
+                  - olm-gpt20b-inference
+              topologyKey: kubernetes.io/hostname
       tolerations:
         - key: "nvidia.com/gpu"
           operator: "Exists"
