@@ -34,9 +34,6 @@ spec:
             - containerPort: 11434
               name: http
           volumeMounts:
-            - name: persistent-storage-s3
-              mountPath: /models
-              readOnly: true
             - name: ollama-cache
               mountPath: /root/.ollama
             - name: shm
@@ -68,9 +65,6 @@ spec:
               add:
                 - IPC_LOCK
       volumes:
-        - name: persistent-storage-s3
-          persistentVolumeClaim:
-            claimName: s3-claim
         - name: ollama-cache
           hostPath:
             path: /opt/dlami/nvme/.ollama
