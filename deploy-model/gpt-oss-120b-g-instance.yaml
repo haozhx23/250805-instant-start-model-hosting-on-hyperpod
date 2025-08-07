@@ -47,7 +47,7 @@ spec:
                   - "-c"
                   - |
                     sleep 10
-                    ollama pull gpt-oss:20b || true
+                    ollama pull gpt-oss:120b || true
           livenessProbe:
             httpGet:
               path: /
