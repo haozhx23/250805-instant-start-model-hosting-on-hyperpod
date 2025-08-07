@@ -83,19 +83,6 @@ spec:
         - key: "nvidia.com/gpu"
           operator: "Exists"
           effect: "NoSchedule"
-      # anti-affinity, on different node
-      affinity:
-        podAntiAffinity:
-          preferredDuringSchedulingIgnoredDuringExecution:
-          - weight: 100
-            podAffinityTerm:
-              labelSelector:
-                matchExpressions:
-                - key: app
-                  operator: In
-                  values:
-                  - olm-gpt20b-inference
-              topologyKey: kubernetes.io/hostname
 ---
 apiVersion: v1
 kind: Service
