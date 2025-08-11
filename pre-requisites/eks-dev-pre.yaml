@@ -114,8 +114,13 @@ Resources:
           echo "Starting dependency installation at $(date)"
           
           # Update system and install basic dependencies
-          apt-get update -y
-          apt-get install -y unzip curl wget python3-pip
+          sudo apt-get update -y
+          sudo apt-get install -y zip unzip curl wget python3-pip docker.io
+
+          systemctl start docker
+          systemctl enable docker
+          usermod -aG docker ubuntu
+          chmod 666 /var/run/docker.sock
           
           # Install CloudFormation helper scripts FIRST
           echo "Installing CloudFormation helper scripts..."
@@ -134,20 +139,20 @@ Resources:
           rm -rf awscliv2.zip aws/
           
           # Verify AWS CLI installation
-          aws --version
+          # aws --version
+          sudo -u ubuntu aws configure set region ${AWS::Region}
+          sudo -u ubuntu aws configure set output json
           
           # Install kubectl
           echo "Installing kubectl..."
           curl -O https://s3.us-west-2.amazonaws.com/amazon-eks/1.30.4/2024-09-11/bin/linux/amd64/kubectl
           chmod +x ./kubectl
-          mkdir -p /home/ubuntu/bin
-          cp ./kubectl /home/ubuntu/bin/kubectl
-          rm kubectl
+          mv ./kubectl /usr/local/bin/
           
-          # Update PATH for ubuntu user
-          echo 'export PATH=$HOME/bin:$PATH' >> /home/ubuntu/.bashrc
-          chown ubuntu:ubuntu /home/ubuntu/bin/kubectl
-          chown ubuntu:ubuntu /home/ubuntu/.bashrc
+          # # Update PATH for ubuntu user
+          # echo 'export PATH=$HOME/bin:$PATH' >> /home/ubuntu/.bashrc
+          # chown ubuntu:ubuntu /home/ubuntu/bin/kubectl
+          # chown ubuntu:ubuntu /home/ubuntu/.bashrc
           
           # Install eksctl (skip checksum verification to avoid failures)
           echo "Installing eksctl..."
@@ -169,10 +174,11 @@ Resources:
           
           # Verify installations
           echo "Verifying installations..."
-          aws --version
-          kubectl version --client
-          eksctl version
-          helm version
+          
+          # aws --version
+          # kubectl version --client
+          # eksctl version
+          # helm version
           
           # Set proper ownership for ubuntu user home directory
           chown -R ubuntu:ubuntu /home/ubuntu/
@@ -180,6 +186,10 @@ Resources:
           echo "Dependency installation completed at $(date)"
           
           # Signal CloudFormation that the instance is ready
+          # Get instance ID using IMDSv2
+          TOKEN=$(curl -X PUT "http://169.254.169.254/latest/api/token" -H "X-aws-ec2-metadata-token-ttl-seconds: 21600" 2>/dev/null)
+          INSTANCE_ID=$(curl -H "X-aws-ec2-metadata-token: $TOKEN" -s http://169.254.169.254/latest/meta-data/instance-id 2>/dev/null)
+          
           # Try multiple methods to ensure signal is sent
           if command -v cfn-signal >/dev/null 2>&1; then
             cfn-signal -e $? --stack ${AWS::StackName} --resource EC2Instance --region ${AWS::Region}
@@ -190,7 +200,12 @@ Resources:
           else
             echo "cfn-signal not found, using AWS CLI to send signal"
             # Fallback: use AWS CLI to send signal
-            aws cloudformation signal-resource --stack-name ${AWS::StackName} --logical-resource-id EC2Instance --unique-id $(curl -s http://169.254.169.254/latest/meta-data/instance-id) --status SUCCESS --region ${AWS::Region}
+            if [ -n "$INSTANCE_ID" ]; then
+              aws cloudformation signal-resource --stack-name ${AWS::StackName} --logical-resource-id EC2Instance --unique-id $INSTANCE_ID --status SUCCESS --region ${AWS::Region}
+            else
+              echo "Failed to get instance ID, trying without unique-id"
+              aws cloudformation signal-resource --stack-name ${AWS::StackName} --logical-resource-id EC2Instance --status SUCCESS --region ${AWS::Region}
+            fi
           fi
       Tags:
         - Key: Name
@@ -198,7 +213,7 @@ Resources:
     CreationPolicy:
       ResourceSignal:
         Count: 1
-        Timeout: PT5M  # 5 minutes for fast failure
+        Timeout: PT15M  # 5 minutes for fast failure
 
 Outputs:
   InstanceId:
