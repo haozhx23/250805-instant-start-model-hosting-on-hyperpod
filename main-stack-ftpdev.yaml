@@ -436,7 +436,7 @@ Parameters:
   HyperPodTemplateBucketName:
     Description: The S3 bucket name containing the HyperPod cluster template
     Type: String
-    Default: pdx-cluster-mount
+    Default: "instant_start_s3_bucket"
 
   ### ---------------- Condition Params ----------------###
 

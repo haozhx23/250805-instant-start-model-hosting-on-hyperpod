@@ -23,6 +23,7 @@ if [ -n "$FTP_NAME" ]; then
   {"ParameterKey": "NodeRecovery", "ParameterValue": "None"},
   {"ParameterKey": "EnableInstanceStressCheck", "ParameterValue": "false"},
   {"ParameterKey": "EnableInstanceConnectivityCheck", "ParameterValue": "false"},
+  {"ParameterKey": "AcceleratedThreadsPerCore", "ParameterValue": "2"},
   {"ParameterKey": "HyperPodTemplateBucketName", "ParameterValue": "$DEPLOY_MODEL_S3_BUCKET"},
   {"ParameterKey": "AcceleratedTrainingPlanArn", "ParameterValue": "arn:aws:sagemaker:$AWS_REGION:$ACCOUNT_ID:training-plan/$FTP_NAME"}
 ]
