@@ -1,6 +1,19 @@
 #!/bin/bash
 
 source init_envs
+printenv | grep -E "(CLOUD_FORMATION|AWS_|EKS_|HP_|GPU_|DEPLOY_|ACCOUNT_|STACK_)"
+
+# 要求用户确认
+echo ""
+echo "请检查上述环境变量是否正确。"
+read -p "是否继续执行? (y/n): " -n 1 -r
+echo ""
+if [[ ! $REPLY =~ ^[Yy]$ ]]; then
+    echo "取消执行"
+    exit 1
+fi
+
+echo "继续执行..."
 
 aws s3 mb s3://$DEPLOY_MODEL_S3_BUCKET --region ${AWS_REGION}
 
