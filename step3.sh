@@ -89,7 +89,7 @@ spec:
     driver: s3.csi.aws.com # required
     volumeHandle: s3-csi-driver-volume
     volumeAttributes:
-      bucketName: pdx-cluster-mount
+      bucketName: $DEPLOY_MODEL_S3_BUCKET
 EOF
 
 kubectl apply -f /tmp/pv_s3.yaml
