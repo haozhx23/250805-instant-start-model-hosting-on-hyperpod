@@ -41,18 +41,18 @@ EOF
 
 s3_policy_ts=$(date +%Y%m%d_%H%M%S)
 # aws iam create-policy \
-#     --policy-name S3MountpointAccessPolicy-$s3_policy_ts \
+#     --policy-name S3MountpointAccessPolicy-$EKS_CLUSTER_NAME \
 #     --policy-document file:///tmp/s3accesspolicy.json
 
 # 'Policy.{PolicyName:PolicyName,Arn:Arn}'
 
 s3_policy_arn=$(aws iam create-policy \
-    --policy-name S3MountpointAccessPolicy-$s3_policy_ts \
+    --policy-name S3MountpointAccessPolicy-$EKS_CLUSTER_NAME \
     --policy-document file:///tmp/s3accesspolicy.json \
     --query 'Policy.Arn' \
     --output text)
 
-ROLE_NAME=SM_HP_S3_CSI_ROLE_$s3_policy_ts
+ROLE_NAME=SM_HP_S3_CSI_ROLE_$EKS_CLUSTER_NAME
 # POLICY_ARN=$(aws iam list-policies --query "Policies[?PolicyName==\`S3MountpointAccessPolicy-$s3_policy_ts\`]" | jq '.[0].Arn' |  tr -d '"')
 
 eksctl create iamserviceaccount \
